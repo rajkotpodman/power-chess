@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+// BrowserRouter ની જગ્યાએ HashRouter ઉપયોગ કર્યો છે (દરેક હોસ્ટિંગમાં 404 ની કાયમી મુક્તિ)
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 import Login from './components/Login';
@@ -29,7 +30,6 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* અહીં હવે યુઝર સ્ટેટ બદલાશે એટલે Navigate આપોઆપ તેને "/" (હોમ) પર લઈ જશે */}
         <Route 
           path="/login" 
           element={!user ? <Login /> : <Navigate to="/" />} 
