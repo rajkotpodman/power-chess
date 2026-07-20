@@ -10,34 +10,48 @@ export default function Game({ user, isAiMode }) {
   const [gameFen, setGameFen] = useState('start');
   const chessRef = useRef(new Chess());
   const socketRef = useRef(null);
-  const messagesEndRef = useRef(null); // ચેટ ઓટો-સ્ક્રોલ કરવા માટે
+  const messagesEndRef = useRef(null);
   
   const [moveFrom, setMoveFrom] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   
-  // ચેટ માટેના નવા સ્ટેટ્સ
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
 
   useEffect(() => {
-    if (!isAiMode) {
-      socketRef.current = io('https://power-chess-a11s.onrender.com');
-      socketRef.current.emit('joinRoom', roomId);
+    if (!isAiMode && roomId) {
+      // 1. Render Socket સર્વર સાથે કનેક્ટ કરો
+      socketRef.current = io('https://power-chess-a11s.onrender.com', {
+        transports: ['websocket', 'polling']
+      });
 
-      // ૧. વિરોધીનો ચેસ મૂવ સાંભળવા માટે
-      socketRef.current.on('oppMove', (moveData) => {
+      // 2. કનેક્ટ થતાની સાથે જ રૂમ જોઈન કરો
+      socketRef.current.on('connect', () => {
+        console.log('Connected to socket server. Joining room:', roomId);
+        socketRef.current.emit('join-room', roomId);
+        socketRef.current.emit('joinRoom', roomId); // Fallback standard name
+      });
+
+      // 3. વિરોધીનો ચેસ મૂવ સાંભળવા માટે (બંને પ્રકારની ઈવેન્ટ્સ હેન્ડલ કરી છે)
+      const handleIncomingMove = (moveData) => {
         try {
           chessRef.current.move(moveData);
           setGameFen(chessRef.current.fen());
         } catch (err) {
           console.error("Opponent move error:", err);
         }
-      });
+      };
 
-      // ૨. રિયલ-ટાઇમ ચેટ મેસેજ સાંભળવા માટે (નવો લિસનર)
-      socketRef.current.on('chatMessage', (msgData) => {
+      socketRef.current.on('move', handleIncomingMove);
+      socketRef.current.on('oppMove', handleIncomingMove);
+
+      // 4. રિયલ-ટાઇમ ચેટ મેસેજ સાંભળવા માટે
+      const handleIncomingChat = (msgData) => {
         setMessages((prev) => [...prev, msgData]);
-      });
+      };
+
+      socketRef.current.on('chat-message', handleIncomingChat);
+      socketRef.current.on('chatMessage', handleIncomingChat);
 
       return () => {
         if (socketRef.current) socketRef.current.disconnect();
@@ -45,7 +59,7 @@ export default function Game({ user, isAiMode }) {
     }
   }, [roomId, isAiMode]);
 
-  // નવો મેસેજ આવે ત્યારે ચેટ બોક્સ આપોઆપ નીચે સ્ક્રોલ થઈ જશે
+  // મેસેજ આવે ત્યારે ઓટો-સ્ક્રોલ
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -61,18 +75,17 @@ export default function Game({ user, isAiMode }) {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    // લોકલ સ્ટેટમાં ઉમેરો
     setMessages((prev) => [...prev, msgData]);
 
-    // સોકેટ દ્વારા બીજા પ્લેયરને મોકલો
     if (socketRef.current) {
+      socketRef.current.emit('chat-message', { roomId, message: msgData });
       socketRef.current.emit('sendChatMessage', { roomId, msgData });
     }
 
     setInputMessage('');
   };
 
-  // AI લોજિક (તમારું જે હતું તે જ રાખ્યું છે)
+  // AI Evaluate & Move Logic
   const evaluateBoard = (chess) => {
     const weights = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 900 };
     let totalEvaluation = 0;
@@ -126,6 +139,7 @@ export default function Game({ user, isAiMode }) {
       if (move) {
         setGameFen(chessRef.current.fen());
         if (!isAiMode && socketRef.current) {
+          socketRef.current.emit('move', { roomId, move: moveData });
           socketRef.current.emit('chessMove', { roomId, moveData });
         } else if (isAiMode) {
           setTimeout(makeAiMove, 500);
@@ -179,7 +193,7 @@ export default function Game({ user, isAiMode }) {
   return (
     <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#161512', minHeight: '100vh', color: '#fff' }}>
       
-      {/* હેડર સેક્શન */}
+      {/* હેડર */}
       <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: '960px', marginBottom: '20px' }}>
         <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer' }}><Home size={24}/></button>
         <h2 style={{ margin: 0 }}>{isAiMode ? 'Solo vs AI' : 'Multiplayer Room'}</h2>
@@ -188,7 +202,7 @@ export default function Game({ user, isAiMode }) {
         )}
       </div>
 
-      {/* મેઈન ગેમ કન્ટેનર: બોર્ડ અને ચેટ બંને લાઇન-સર ગોઠવાઈ જશે */}
+      {/* મેઈન લેઆઉટ */}
       <div style={{ display: 'flex', flexDirection: 'row', gap: '30px', flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: '960px' }}>
         
         {/* ચેસ બોર્ડ */}
@@ -214,7 +228,7 @@ export default function Game({ user, isAiMode }) {
           )}
         </div>
 
-        {/* 💬 એડવાન્સ લાઈવ ચેટ બોક્સ (ફક્ત મલ્ટિપ્લેયર મોડમાં જ દેખાશે) */}
+        {/* ચેટ બોક્સ */}
         {!isAiMode && (
           <div style={{ width: '340px', height: '496px', backgroundColor: '#262421', borderRadius: '8px', display: 'flex', flexDirection: 'column', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}>
             <div style={{ padding: '15px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#1f1e1b', borderTopLeftRadius: '8px', borderTopRightRadius: '8px' }}>
@@ -222,7 +236,6 @@ export default function Game({ user, isAiMode }) {
               <span style={{ fontWeight: 'bold' }}>Room Chat</span>
             </div>
 
-            {/* મેસેજ લિસ્ટ એરિયા */}
             <div style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {messages.length === 0 ? (
                 <p style={{ color: '#666', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No messages yet. Say hello!</p>
@@ -247,7 +260,6 @@ export default function Game({ user, isAiMode }) {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* ઇનપુટ બોક્સ */}
             <form onSubmit={sendMessage} style={{ padding: '10px', borderTop: '1px solid #333', display: 'flex', gap: '8px', backgroundColor: '#1f1e1b', borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px' }}>
               <input 
                 type="text" 
@@ -264,7 +276,7 @@ export default function Game({ user, isAiMode }) {
         )}
       </div>
 
-      {/* શેર મોડલ (તમારું જે હતું તે જ રાખ્યું છે) */}
+      {/* શેર મોડલ */}
       {showShareModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
           <div style={{ background: '#262421', padding: '30px', borderRadius: '8px', textAlign: 'center', width: '300px' }}>
