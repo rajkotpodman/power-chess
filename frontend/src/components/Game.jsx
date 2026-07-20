@@ -21,7 +21,7 @@ export default function Game({ user, isAiMode }) {
 
   useEffect(() => {
     if (!isAiMode) {
-      socketRef.current = io('http://localhost:3000');
+      socketRef.current = io('https://power-chess-a11s.onrender.com');
       socketRef.current.emit('joinRoom', roomId);
 
       // ૧. વિરોધીનો ચેસ મૂવ સાંભળવા માટે
